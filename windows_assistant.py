@@ -15,6 +15,7 @@ import tkinter as tk
 import re
 import cv2
 import spacy 
+import pyautogui
 import pygetwindow as gw 
 from spacy.matcher import Matcher 
 from tkinter import ttk, messagebox 
@@ -183,7 +184,6 @@ def _create_actual_settings_gui():
 
         tts_frame = ttk.LabelFrame(main_frame, text="Output Suara (TTS)", padding="10")
 
-        tts_frame = ttk.LabelFrame(main_frame, text="Output Suara (TTS)", padding="10")
         tts_frame.pack(pady=10, fill=tk.X)
         ttk.Label(tts_frame, text="Pilih Suara:").pack(side=tk.LEFT, padx=5, pady=5, anchor='w')
         if TTS_ENGINE:
@@ -328,10 +328,6 @@ def _create_desktop_icon_window():
         print("Thread ikon desktop (DEBUG KOTAK MERAH) selesai.") 
 
 def create_desktop_icon_tk(parent_root):
-    """
-    Membuat jendela Toplevel untuk ikon desktop, tersembunyi awalnya.
-    Dipanggil sekali saat startup.
-    """
     global desktop_icon_window, desktop_icon_label, desktop_icon_photo, main_tk_root 
 
     if not parent_root:
@@ -516,6 +512,13 @@ def define_spacy_patterns():
         {"LOWER": {"IN": ["tentang", "mengenai"]}, "OP": "?"}, 
         {"OP": "+"}
     ]
+
+    pattern_close_app = [
+        {"LOWER": {"IN": ["tutup", "close", "hentikan"]}}, # Tambahkan kata kunci lain jika perlu
+        {"LOWER": "aplikasi", "OP": "?"}, # Kata "aplikasi" opsional
+        {"IS_ALPHA": True, "OP": "+"} # Nama aplikasi
+    ]
+    MATCHER.add("CLOSE_APPLICATION_SPACY", [pattern_close_app])
     MATCHER.add("SEARCH_INFO_SPACY", [pattern_search_info_1, pattern_search_info_2, pattern_search_info_3])
     
     print("Pola-pola spaCy Matcher telah didefinisikan.")
@@ -670,6 +673,7 @@ def process_nlu(text):
     if not text: return {"intent": "NO_INPUT", "entities": {}}
     text_lower = text.lower()
     print(f"DEBUG (process_nlu): Menerima teks input: '{text_lower}'") 
+    print(f"DEBUG (process_nlu): Status Awal: SPACY_MODEL_INITIALIZED={SPACY_MODEL_INITIALIZED}, NLP is None={NLP is None}, MATCHER is None={MATCHER is None}")
 
     if SPACY_MODEL_INITIALIZED and NLP and MATCHER:
         doc = NLP(text_lower)
@@ -681,7 +685,6 @@ def process_nlu(text):
             intent_name_spacy = NLP.vocab.strings[match_id]  
 
             if intent_name_spacy == "OPEN_APPLICATION_SPACY":
-                print("DEBUG (process_nlu): spaCy cocok dengan OPEN_APPLICATION_SPACY") 
                 app_name_tokens = []
                 if len(span) > 1 and span[1].lower_ == "aplikasi": 
                     app_name_tokens = span[2:] 
@@ -696,38 +699,53 @@ def process_nlu(text):
                     print("DEBUG (process_nlu): spaCy OPEN_APPLICATION_SPACY tapi tidak ada app_name.") 
                     return {"intent": "OPEN_APPLICATION_PROMPT", "entities": {}}
 
+
+            elif intent_name_spacy == "CLOSE_APPLICATION_SPACY":
+                print("DEBUG (process_nlu): spaCy cocok dengan CLOSE_APPLICATION_SPACY")
+                app_name_tokens = []
+                if len(span) > 1 and span[1].lower_ == "aplikasi": 
+                    app_name_tokens = span[2:] 
+                elif len(span) > 0: 
+                    app_name_tokens = span[1:]
+                app_name = " ".join([token.text for token in app_name_tokens if token.is_alpha or token.is_digit]).strip()
+                if app_name:
+                    print(f"DEBUG (process_nlu): spaCy menemukan app_name untuk ditutup: '{app_name}'")
+                    return {"intent": "CLOSE_APPLICATION", "entities": {"app_name": app_name}}
+                else:
+                    print("DEBUG (process_nlu): spaCy CLOSE_APPLICATION_SPACY tapi tidak ada app_name.")
+                    return {"intent": "ASK_AI", "entities": {"prompt": text}} 
+
             elif intent_name_spacy == "SEARCH_INFO_SPACY":
                 print("DEBUG (process_nlu): spaCy cocok dengan SEARCH_INFO_SPACY") 
                 topic_tokens = []
-                if span[0].lower_ in ["cari", "carikan", "jelaskan", "terangkan"]:
-                    idx_start_topic = 1
-                    if len(span) > 1 and span[1].lower_ in ["aplikasi", "informasi", "tentang", "mengenai"]:
-                        idx_start_topic = 2
-                        if len(span) > 2 and span[1].lower_ == "informasi" and span[2].lower_ in ["tentang", "mengenai"]:
-                            idx_start_topic = 3
-                    topic_tokens = span[idx_start_topic:]
-                elif span[0].lower_ == "apa" and len(span) > 1 and span[1].lower_ == "itu":
-                    topic_tokens = span[2:]
-                
                 topic = " ".join([token.text for token in topic_tokens]).strip()
                 if topic: 
                     print(f"DEBUG (process_nlu): spaCy menemukan topic: '{topic}'") 
                     return {"intent": "SEARCH_INFO", "entities": {"topic": topic}}
         
-        print(f"DEBUG (process_nlu): Tidak ada pola spaCy Matcher yang cocok dan menghasilkan return untuk: '{text_lower}'.")
+        print(f"DEBUG (process_nlu): Tidak ada pola spaCy Matcher yang dikenal yang menghasilkan return untuk: '{text_lower}'.")
     else:
         print(f"DEBUG (process_nlu): spaCy tidak diinisialisasi atau tidak aktif.")
 
-
-    print(f"DEBUG (process_nlu): Mencoba fallback regex OPEN_APPLICATION untuk: '{text_lower}'") 
-    match_open_app_fallback = re.search(r"^(?:buka|jalankan|aktifkan)\s+(?:aplikasi\s+)?(.+)", text_lower) 
+    print(f"DEBUG (process_nlu): Mencoba fallback regex OPEN_APPLICATION untuk: '{text_lower}'")
+    match_open_app_fallback = re.search(r"^(?:buka|jalankan|aktifkan)\s+(?:aplikasi\s+)?(.+)", text_lower)
     if match_open_app_fallback:
         app_name = match_open_app_fallback.group(1).strip()
         print(f"DEBUG (process_nlu): Fallback regex OPEN_APPLICATION cocok, app_name = '{app_name}'")
         if app_name: 
             return {"intent": "OPEN_APPLICATION", "entities": {"app_name": app_name}}
     else:
-        print(f"DEBUG (process_nlu): Fallback regex OPEN_APPLICATION TIDAK cocok.") 
+        print(f"DEBUG (process_nlu): Fallback regex OPEN_APPLICATION TIDAK cocok.")
+
+    print(f"DEBUG (process_nlu): Mencoba fallback regex CLOSE_APPLICATION untuk: '{text_lower}'")
+    match_close_app_fallback = re.search(r"^(?:tutup|close|hentikan)\s+(?:aplikasi\s+)?(.+)", text_lower)
+    if match_close_app_fallback:
+        app_name = match_close_app_fallback.group(1).strip()
+        print(f"DEBUG (process_nlu): Fallback regex CLOSE_APPLICATION cocok, app_name = '{app_name}'")
+        if app_name: 
+            return {"intent": "CLOSE_APPLICATION", "entities": {"app_name": app_name}}
+    else:
+        print(f"DEBUG (process_nlu): Fallback regex CLOSE_APPLICATION TIDAK cocok.") 
 
     if any(word in text_lower for word in ["selamat tinggal", "keluar program", "berhenti program"]):
         print("DEBUG (process_nlu): Keyword cocok dengan GOODBYE_APP") 
@@ -742,8 +760,25 @@ def process_nlu(text):
         print("DEBUG (process_nlu): Keyword cocok dengan GET_ACTIVE_WINDOW_TITLE")  
         return {"intent": "GET_ACTIVE_WINDOW_TITLE", "entities": {}}
 
+
     print(f"DEBUG (process_nlu): Tidak ada intent spesifik yang cocok, jatuh ke ASK_AI untuk '{text_lower}'") 
     return {"intent": "ASK_AI", "entities": {"prompt": text}}
+
+def handle_type_text(entities):
+    text_to_type = entities.get("text_to_type")
+    if not text_to_type:
+        return "Apa yang ingin saya ketikkan?"
+
+    try:
+        print(f"INFO (handle_type_text): Akan mengetik: '{text_to_type}'")
+        time.sleep(1) 
+        pyautogui.write(text_to_type, interval=0.05) 
+        return f"Selesai mengetik: {text_to_type}"
+    except Exception as e:
+        print(f"ERROR (handle_type_text): Terjadi kesalahan - {e}")
+        if isinstance(e, pyautogui.PyAutoGUIException) or "pyautogui" in str(e).lower():
+             return "Maaf, saya mengalami masalah dengan fitur mengetik. Pastikan library yang dibutuhkan sudah terinstal."
+        return "Maaf, terjadi kesalahan saat mencoba mengetik."
 
 def handle_open_application(entities):
     app_name = entities.get("app_name")
@@ -766,6 +801,71 @@ def handle_open_application(entities):
         else: response_msg = f"Tidak ditemukan '{app_name}'."
     except Exception as e: response_msg = f"Error buka {app_name}: {e}"
     return response_msg
+
+def handle_close_application(entities):
+    app_name_to_close = entities.get("app_name")
+    if not app_name_to_close:
+        return "Aplikasi apa yang ingin Anda tutup?"
+
+    app_name_lower = app_name_to_close.lower()
+    print(f"INFO (handle_close_application): Mencoba menutup aplikasi: '{app_name_to_close}'")
+    
+    try:
+        windows = gw.getWindowsWithTitle(app_name_to_close) 
+        # Anda mungkin perlu logika yang lebih canggih untuk mencocokkan judul jendela, 
+        # misalnya jika "chrome" ada di banyak judul, atau "Paint" untuk "Microsoft Paint"
+        
+        target_window = None
+        all_titles = []
+        for win in gw.getAllWindows():
+             all_titles.append(win.title.lower()) 
+             if app_name_lower in win.title.lower():
+                 target_window = win
+                 break 
+
+        if target_window:
+            print(f"  Menemukan jendela: '{target_window.title}'. Mencoba menutup...")
+            target_window.close() 
+            time.sleep(0.5) 
+            if target_window.isClosed: 
+                 return f"Aplikasi {app_name_to_close} seharusnya sudah ditutup."
+            else:
+                 print(f"  Jendela '{target_window.title}' tidak merespons .close(). Mencoba taskkill.")
+                 process_map = {
+                     "chrome": "chrome.exe",
+                     "notepad": "notepad.exe",
+                     "paint": "mspaint.exe",
+                     "kalkulator": "calc.exe", 
+                 }
+                 process_name = process_map.get(app_name_lower, f"{app_name_lower}.exe")
+                 try:
+                     subprocess.run(["taskkill", "/F", "/IM", process_name], check=True, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                     return f"Aplikasi {app_name_to_close} (proses {process_name}) telah ditutup paksa."
+                 except subprocess.CalledProcessError:
+                     return f"Gagal menutup paksa proses {process_name}. Mungkin sudah tertutup atau nama proses salah."
+                 except FileNotFoundError: 
+                     return f"Perintah taskkill tidak ditemukan. Tidak bisa menutup paksa."
+
+        else:
+            print(f"  Tidak ditemukan jendela yang cocok dengan '{app_name_to_close}'. Daftar judul yang terdeteksi: {all_titles}")
+            process_map = {
+                 "chrome": "chrome.exe", "notepad": "notepad.exe", "paint": "mspaint.exe", 
+                 "kalkulator": "calc.exe", 
+            }
+            process_name_direct = process_map.get(app_name_lower)
+            if process_name_direct:
+                print(f"  Tidak ada jendela, mencoba taskkill langsung untuk proses: {process_name_direct}")
+                try:
+                    subprocess.run(["taskkill", "/F", "/IM", process_name_direct], check=True, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                    return f"Proses {process_name_direct} untuk aplikasi {app_name_to_close} telah ditutup paksa."
+                except Exception as e_tk_direct:
+                    print(f"  Gagal taskkill direct: {e_tk_direct}")
+                    return f"Tidak ditemukan jendela untuk {app_name_to_close}, dan gagal menutup prosesnya secara langsung."
+            return f"Tidak dapat menemukan jendela aplikasi {app_name_to_close} yang aktif."
+
+    except Exception as e:
+        print(f"ERROR (handle_close_application): Terjadi kesalahan - {e}")
+        return f"Maaf, terjadi kesalahan saat mencoba menutup {app_name_to_close}."
 
 def handle_get_active_window_title():
     try:
@@ -910,8 +1010,15 @@ def continuous_conversation_loop():
                     speak_with_pygame(f"Mencoba membuka {entities.get('app_name','aplikasi tersebut')}.") 
                     time.sleep(0.3) 
                     assistant_response = handle_open_application(entities) 
+
                 elif intent == "OPEN_APPLICATION_PROMPT":
                     assistant_response = "Aplikasi apa? Katakan 'buka aplikasi [nama]'."
+                
+                elif intent == "CLOSE_APPLICATION":
+                    assistant_response = handle_close_application(entities)
+                
+                elif intent == "TYPE_TEXT":
+                    assistant_response = handle_type_text(entities)
 
                 elif intent == "GET_ACTIVE_WINDOW_TITLE":
                     assistant_response = handle_get_active_window_title()
