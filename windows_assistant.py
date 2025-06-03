@@ -386,7 +386,6 @@ def create_desktop_icon_tk(parent_root):
 
 
 def _set_icon_position():
-    """Internal: Mengatur posisi ikon di desktop. Dipanggil dari main thread via _show()."""
     if desktop_icon_window and desktop_icon_window.winfo_exists():
         desktop_icon_window.update_idletasks() 
         
@@ -409,7 +408,6 @@ def _set_icon_position():
         print("PERINGATAN (_set_icon_position): Jendela ikon desktop tidak ada untuk diatur posisinya.")
 
 def show_desktop_icon():
-    """Menampilkan ikon desktop. Dijadwalkan ke main thread Tkinter."""
     global main_tk_root
     
     def _show():
@@ -490,9 +488,6 @@ def load_configuration():
     return voice_id_from_config
 
 def define_spacy_patterns():
-    """Mendefinisikan pola-pola untuk Matcher spaCy.
-       Input pengguna diasumsikan dalam Bahasa Indonesia, pola mencocokkan kata kunci Indonesia.
-    """
     global MATCHER, NLP
     if not MATCHER or not NLP: 
         print("SpaCy Matcher atau NLP model belum siap untuk mendefinisikan pola.") 
@@ -527,7 +522,6 @@ def define_spacy_patterns():
 
 
 def initialize_spacy_model():
-    """Memuat model spaCy dan menginisialisasi Matcher."""
     global NLP, MATCHER, SPACY_MODEL_INITIALIZED 
     if SPACY_MODEL_INITIALIZED: 
         print("Model spaCy sudah diinisialisasi sebelumnya.")
@@ -1148,7 +1142,6 @@ def quit_action(icon, item):
     os._exit(0) 
 
 def open_settings_window_tk(icon=None, item=None): 
-    """Fungsi yang dipanggil oleh menu pystray untuk membuka jendela pengaturan."""
     global main_tk_root
     if main_tk_root:
         main_tk_root.after(0, _create_actual_settings_gui)
