@@ -5,7 +5,6 @@ import pyttsx3
 import pygame 
 import threading
 import time
-import google.generativeai as genai
 import os
 import requests 
 import json     
@@ -17,6 +16,7 @@ import cv2
 import spacy 
 import pyautogui
 import pygetwindow as gw 
+import api
 from spacy.matcher import Matcher 
 from tkinter import ttk, messagebox 
 
@@ -45,8 +45,6 @@ desktop_icon_shutdown_event = threading.Event()
 DESKTOP_ICON_IMAGE_PATH = "siri_style_icon.png" 
 MACOS_LIKE_ICON_BG_COLOR = 'lime green' 
 
-OWM_API_KEY = "1d74db05478bcfd86603446160cf4d36" 
-GEMINI_API_KEY = "AIzaSyDEF9aODiHNEqQHzHm3zOYLEIGRTomx68Q" 
 DEFAULT_LOCATION_WEATHER = "Indonesia" 
 
 gemini_chat_session = None
@@ -67,7 +65,6 @@ MIC_INDEX = None
 CONFIG_FILE = "assistant_config.json"
 
 def _destroy_settings_window():
-    """Fungsi untuk menghancurkan jendela pengaturan jika ada, memastikan settings_window direset."""
     global settings_window
     try:
         if settings_window and settings_window.winfo_exists():
@@ -514,9 +511,9 @@ def define_spacy_patterns():
     ]
 
     pattern_close_app = [
-        {"LOWER": {"IN": ["tutup", "close", "hentikan"]}}, # Tambahkan kata kunci lain jika perlu
-        {"LOWER": "aplikasi", "OP": "?"}, # Kata "aplikasi" opsional
-        {"IS_ALPHA": True, "OP": "+"} # Nama aplikasi
+        {"LOWER": {"IN": ["tutup", "close", "hentikan"]}}, 
+        {"LOWER": "aplikasi", "OP": "?"}, 
+        {"IS_ALPHA": True, "OP": "+"} 
     ]
     MATCHER.add("CLOSE_APPLICATION_SPACY", [pattern_close_app])
     MATCHER.add("SEARCH_INFO_SPACY", [pattern_search_info_1, pattern_search_info_2, pattern_search_info_3])
@@ -544,7 +541,7 @@ def initialize_spacy_model():
         NLP = None; MATCHER = None; SPACY_MODEL_INITIALIZED = False
 
 def initialize_engines(preferred_voice_id=None):
-    global TTS_ENGINE, RECOGNIZER, gemini_chat_session, GEMINI_MODEL_INITIALIZED, pygame, SPACY_MODEL_INITIALIZED
+    global TTS_ENGINE, RECOGNIZER, pygame, SPACY_MODEL_INITIALIZED
     
     print("Menginisialisasi Pygame dan Pygame Mixer...")
     try:
@@ -566,18 +563,13 @@ def initialize_engines(preferred_voice_id=None):
 
     print("Menginisialisasi Speech Recognizer..."); RECOGNIZER = sr.Recognizer(); print("Speech Recognizer berhasil diinisialisasi.")
 
-    print("Menginisialisasi Model AI Gemini...")
-    if GEMINI_API_KEY and GEMINI_API_KEY != "MASUKKAN_API_KEY_GEMINI_ANDA_YANG_VALID": 
-        try:
-            genai.configure(api_key=GEMINI_API_KEY); model = genai.GenerativeModel('gemini-1.5-flash-latest')
-            initial_history = [
-                {'role':'user', 'parts': ["Kamu adalah \"Asisten Cerdas Kanee\"."]}, 
-                {'role':'model', 'parts': ["Baik, saya Kane."]}
-            ]
-            gemini_chat_session = model.start_chat(history=initial_history); GEMINI_MODEL_INITIALIZED = True
-            print("Model Gemini dan sesi chat berhasil diinisialisasi.")
-        except Exception as e: print(f"Kesalahan konfigurasi Gemini: {e}"); gemini_chat_session = None; GEMINI_MODEL_INITIALIZED = False
-    else: print("PERINGATAN: API Key Gemini belum diatur."); GEMINI_MODEL_INITIALIZED = False
+    print("INFO (windows_assistant.py): Memanggil inisialisasi Gemini dari api.py...")
+    api.initialize_gemini()
+
+    if not api.GEMINI_MODEL_INITIALIZED:
+        print("PERINGATAN (windows_assistant.py): Model Gemini GAGAL diinisialisasi melalui api.py.")
+    else:
+        print("INFO (windows_assistant.py): Model Gemini BERHASIL diinisialisasi melalui api.py.")
 
 def set_default_indonesian_voice():
     global TTS_ENGINE
@@ -812,8 +804,6 @@ def handle_close_application(entities):
     
     try:
         windows = gw.getWindowsWithTitle(app_name_to_close) 
-        # Anda mungkin perlu logika yang lebih canggih untuk mencocokkan judul jendela, 
-        # misalnya jika "chrome" ada di banyak judul, atau "Paint" untuk "Microsoft Paint"
         
         target_window = None
         all_titles = []
@@ -836,6 +826,9 @@ def handle_close_application(entities):
                      "notepad": "notepad.exe",
                      "paint": "mspaint.exe",
                      "kalkulator": "calc.exe", 
+                     "word": "winword.exe",
+                     "spotify": "spotify.exe",
+                     "excel": "excel.exe",
                  }
                  process_name = process_map.get(app_name_lower, f"{app_name_lower}.exe")
                  try:
@@ -1033,8 +1026,10 @@ def continuous_conversation_loop():
                         assistant_response = "Topik apa yang ingin Anda cari informasinya?"
 
                 elif intent == "ASK_AI":
-                    if not GEMINI_MODEL_INITIALIZED: assistant_response = "Fitur AI belum aktif."
-                    else: assistant_response = send_to_gemini_chat(entities["prompt"])
+                    if not api.GEMINI_MODEL_INITIALIZED: # Cek variabel dari modul api
+                        assistant_response = "Fitur AI belum aktif."
+                    else:
+                        assistant_response = api.send_to_gemini(entities["prompt"])
                 speak_with_pygame(assistant_response)
             if not is_continuous_mode_active: break
         except sr.RequestError as e: print(f"Mic Error: {e}"); speak_with_pygame("Masalah mic. Mode stop."); is_continuous_mode_active=False; break
