@@ -669,9 +669,8 @@ def process_nlu(text):
 
     if not text: return {"intent": "NO_INPUT", "entities": {}}
     text_lower = text.lower()
-    print(f"DEBUG (process_nlu): Menerima teks input: '{text_lower}'") # Tambahan log
+    print(f"DEBUG (process_nlu): Menerima teks input: '{text_lower}'") 
 
-    # 1. Coba dengan spaCy Matcher jika aktif
     if SPACY_MODEL_INITIALIZED and NLP and MATCHER:
         doc = NLP(text_lower)
         matches = MATCHER(doc)
@@ -682,9 +681,8 @@ def process_nlu(text):
             intent_name_spacy = NLP.vocab.strings[match_id]  
 
             if intent_name_spacy == "OPEN_APPLICATION_SPACY":
-                print("DEBUG (process_nlu): spaCy cocok dengan OPEN_APPLICATION_SPACY") # Tambahan log
+                print("DEBUG (process_nlu): spaCy cocok dengan OPEN_APPLICATION_SPACY") 
                 app_name_tokens = []
-                # Logika ekstraksi app_name Anda di sini (sudah terlihat cukup baik)
                 if len(span) > 1 and span[1].lower_ == "aplikasi": 
                     app_name_tokens = span[2:] 
                 elif len(span) > 0: 
@@ -692,18 +690,15 @@ def process_nlu(text):
                 app_name_parts = [token.text for token in app_name_tokens if token.is_alpha or token.is_digit]
                 app_name = " ".join(app_name_parts).strip()
                 if app_name: 
-                    print(f"DEBUG (process_nlu): spaCy menemukan app_name: '{app_name}'") # Tambahan log
+                    print(f"DEBUG (process_nlu): spaCy menemukan app_name: '{app_name}'") 
                     return {"intent": "OPEN_APPLICATION", "entities": {"app_name": app_name}}
                 else: 
-                    print("DEBUG (process_nlu): spaCy OPEN_APPLICATION_SPACY tapi tidak ada app_name.") # Tambahan log
+                    print("DEBUG (process_nlu): spaCy OPEN_APPLICATION_SPACY tapi tidak ada app_name.") 
                     return {"intent": "OPEN_APPLICATION_PROMPT", "entities": {}}
 
             elif intent_name_spacy == "SEARCH_INFO_SPACY":
-                # Perbaiki bug di sini - seharusnya tidak ada if intent_name_spacy == "OPEN_APPLICATION_SPACY": di dalamnya
-                print("DEBUG (process_nlu): spaCy cocok dengan SEARCH_INFO_SPACY") # Tambahan log
+                print("DEBUG (process_nlu): spaCy cocok dengan SEARCH_INFO_SPACY") 
                 topic_tokens = []
-                # Logika ekstraksi topic Anda yang sudah diperbaiki (pastikan benar)
-                # Contoh (perlu disesuaikan dengan pola Anda):
                 if span[0].lower_ in ["cari", "carikan", "jelaskan", "terangkan"]:
                     idx_start_topic = 1
                     if len(span) > 1 and span[1].lower_ in ["aplikasi", "informasi", "tentang", "mengenai"]:
@@ -716,41 +711,38 @@ def process_nlu(text):
                 
                 topic = " ".join([token.text for token in topic_tokens]).strip()
                 if topic: 
-                    print(f"DEBUG (process_nlu): spaCy menemukan topic: '{topic}'") # Tambahan log
+                    print(f"DEBUG (process_nlu): spaCy menemukan topic: '{topic}'") 
                     return {"intent": "SEARCH_INFO", "entities": {"topic": topic}}
         
-        # Jika loop spaCy selesai tanpa return, berarti tidak ada intent yang cocok dari spaCy
         print(f"DEBUG (process_nlu): Tidak ada pola spaCy Matcher yang cocok dan menghasilkan return untuk: '{text_lower}'.")
     else:
         print(f"DEBUG (process_nlu): spaCy tidak diinisialisasi atau tidak aktif.")
 
 
-    print(f"DEBUG (process_nlu): Mencoba fallback regex OPEN_APPLICATION untuk: '{text_lower}'") # Tambahan log
-    match_open_app_fallback = re.search(r"^(?:buka|jalankan|aktifkan)\s+(?:aplikasi\s+)?(.+)", text_lower) # Ditambahkan 'aktifkan'
+    print(f"DEBUG (process_nlu): Mencoba fallback regex OPEN_APPLICATION untuk: '{text_lower}'") 
+    match_open_app_fallback = re.search(r"^(?:buka|jalankan|aktifkan)\s+(?:aplikasi\s+)?(.+)", text_lower) 
     if match_open_app_fallback:
         app_name = match_open_app_fallback.group(1).strip()
         print(f"DEBUG (process_nlu): Fallback regex OPEN_APPLICATION cocok, app_name = '{app_name}'")
         if app_name: 
             return {"intent": "OPEN_APPLICATION", "entities": {"app_name": app_name}}
     else:
-        print(f"DEBUG (process_nlu): Fallback regex OPEN_APPLICATION TIDAK cocok.") # Tambahan log
+        print(f"DEBUG (process_nlu): Fallback regex OPEN_APPLICATION TIDAK cocok.") 
 
-    # 3. Keyword Spotting untuk intent lain (setelah mencoba OPEN_APPLICATION via spaCy dan Regex)
     if any(word in text_lower for word in ["selamat tinggal", "keluar program", "berhenti program"]):
-        print("DEBUG (process_nlu): Keyword cocok dengan GOODBYE_APP") # Tambahan log
+        print("DEBUG (process_nlu): Keyword cocok dengan GOODBYE_APP") 
         return {"intent": "GOODBYE_APP", "entities": {}}
     if "siapa namamu" in text_lower: 
-        print("DEBUG (process_nlu): Keyword cocok dengan GET_NAME") # Tambahan log
+        print("DEBUG (process_nlu): Keyword cocok dengan GET_NAME") 
         return {"intent": "GET_NAME", "entities": {}}
     if any(word in text_lower for word in ["jam berapa", "pukul berapa"]):
-        print("DEBUG (process_nlu): Keyword cocok dengan GET_TIME") # Tambahan log
+        print("DEBUG (process_nlu): Keyword cocok dengan GET_TIME") 
         return {"intent": "GET_TIME", "entities": {}}
     if any(phrase in text_lower for phrase in ["apa judul jendela ini", "judul jendela aktif", "jendela apa yang aktif", "apa nama window ini", "sebutkan judul window"]):
-        print("DEBUG (process_nlu): Keyword cocok dengan GET_ACTIVE_WINDOW_TITLE") # Tambahan log
+        print("DEBUG (process_nlu): Keyword cocok dengan GET_ACTIVE_WINDOW_TITLE")  
         return {"intent": "GET_ACTIVE_WINDOW_TITLE", "entities": {}}
 
-    # 4. Jika tidak ada yang cocok, baru fallback ke ASK_AI
-    print(f"DEBUG (process_nlu): Tidak ada intent spesifik yang cocok, jatuh ke ASK_AI untuk '{text_lower}'") # Tambahan log
+    print(f"DEBUG (process_nlu): Tidak ada intent spesifik yang cocok, jatuh ke ASK_AI untuk '{text_lower}'") 
     return {"intent": "ASK_AI", "entities": {"prompt": text}}
 
 def handle_open_application(entities):
