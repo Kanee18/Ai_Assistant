@@ -668,70 +668,89 @@ def process_nlu(text):
     global NLP, MATCHER, SPACY_MODEL_INITIALIZED 
 
     if not text: return {"intent": "NO_INPUT", "entities": {}}
-    text_lower = text.lower() 
+    text_lower = text.lower()
+    print(f"DEBUG (process_nlu): Menerima teks input: '{text_lower}'") # Tambahan log
 
+    # 1. Coba dengan spaCy Matcher jika aktif
     if SPACY_MODEL_INITIALIZED and NLP and MATCHER:
-        doc = NLP(text_lower) 
+        doc = NLP(text_lower)
         matches = MATCHER(doc)
+        print(f"DEBUG (process_nlu): spaCy matches = {[(NLP.vocab.strings[match_id], doc[start:end].text) for match_id, start, end in matches]}")
 
         for match_id, start, end in matches:
             span = doc[start:end]  
             intent_name_spacy = NLP.vocab.strings[match_id]  
 
             if intent_name_spacy == "OPEN_APPLICATION_SPACY":
+                print("DEBUG (process_nlu): spaCy cocok dengan OPEN_APPLICATION_SPACY") # Tambahan log
                 app_name_tokens = []
+                # Logika ekstraksi app_name Anda di sini (sudah terlihat cukup baik)
                 if len(span) > 1 and span[1].lower_ == "aplikasi": 
                     app_name_tokens = span[2:] 
                 elif len(span) > 0: 
                     app_name_tokens = span[1:]
-                
                 app_name_parts = [token.text for token in app_name_tokens if token.is_alpha or token.is_digit]
                 app_name = " ".join(app_name_parts).strip()
-
                 if app_name: 
+                    print(f"DEBUG (process_nlu): spaCy menemukan app_name: '{app_name}'") # Tambahan log
                     return {"intent": "OPEN_APPLICATION", "entities": {"app_name": app_name}}
                 else: 
-                     return {"intent": "OPEN_APPLICATION_PROMPT", "entities": {}}
+                    print("DEBUG (process_nlu): spaCy OPEN_APPLICATION_SPACY tapi tidak ada app_name.") # Tambahan log
+                    return {"intent": "OPEN_APPLICATION_PROMPT", "entities": {}}
 
             elif intent_name_spacy == "SEARCH_INFO_SPACY":
+                # Perbaiki bug di sini - seharusnya tidak ada if intent_name_spacy == "OPEN_APPLICATION_SPACY": di dalamnya
+                print("DEBUG (process_nlu): spaCy cocok dengan SEARCH_INFO_SPACY") # Tambahan log
                 topic_tokens = []
-                if span[0].lower_ in ["cari", "carikan"]: 
-                    idx_start_topic = 2
-                    if span[1].lower_ in ["tentang", "mengenai"]:
+                # Logika ekstraksi topic Anda yang sudah diperbaiki (pastikan benar)
+                # Contoh (perlu disesuaikan dengan pola Anda):
+                if span[0].lower_ in ["cari", "carikan", "jelaskan", "terangkan"]:
+                    idx_start_topic = 1
+                    if len(span) > 1 and span[1].lower_ in ["aplikasi", "informasi", "tentang", "mengenai"]:
                         idx_start_topic = 2
-                    elif span[1].lower_ == "informasi" and len(span) > 2 and span[2].lower_ in ["tentang", "mengenai"]:
-                         idx_start_topic = 3
+                        if len(span) > 2 and span[1].lower_ == "informasi" and span[2].lower_ in ["tentang", "mengenai"]:
+                            idx_start_topic = 3
                     topic_tokens = span[idx_start_topic:]
-                elif span[0].lower_ == "apa" and span[1].lower_ == "itu": 
+                elif span[0].lower_ == "apa" and len(span) > 1 and span[1].lower_ == "itu":
                     topic_tokens = span[2:]
-                elif span[0].lower_ in ["jelaskan", "terangkan"]: 
-                    if len(span) > 1 and span[1].lower_ in ["tentang", "mengenai"]:
-                        topic_tokens = span[2:]
-                    else:
-                        topic_tokens = span[1:]
-                        
+                
                 topic = " ".join([token.text for token in topic_tokens]).strip()
                 if topic: 
+                    print(f"DEBUG (process_nlu): spaCy menemukan topic: '{topic}'") # Tambahan log
                     return {"intent": "SEARCH_INFO", "entities": {"topic": topic}}
-        print(f"Tidak ada pola spaCy Matcher yang cocok untuk: '{text_lower}'. Mencoba keyword spotting...")
+        
+        # Jika loop spaCy selesai tanpa return, berarti tidak ada intent yang cocok dari spaCy
+        print(f"DEBUG (process_nlu): Tidak ada pola spaCy Matcher yang cocok dan menghasilkan return untuk: '{text_lower}'.")
+    else:
+        print(f"DEBUG (process_nlu): spaCy tidak diinisialisasi atau tidak aktif.")
 
 
+    print(f"DEBUG (process_nlu): Mencoba fallback regex OPEN_APPLICATION untuk: '{text_lower}'") # Tambahan log
+    match_open_app_fallback = re.search(r"^(?:buka|jalankan|aktifkan)\s+(?:aplikasi\s+)?(.+)", text_lower) # Ditambahkan 'aktifkan'
+    if match_open_app_fallback:
+        app_name = match_open_app_fallback.group(1).strip()
+        print(f"DEBUG (process_nlu): Fallback regex OPEN_APPLICATION cocok, app_name = '{app_name}'")
+        if app_name: 
+            return {"intent": "OPEN_APPLICATION", "entities": {"app_name": app_name}}
+    else:
+        print(f"DEBUG (process_nlu): Fallback regex OPEN_APPLICATION TIDAK cocok.") # Tambahan log
+
+    # 3. Keyword Spotting untuk intent lain (setelah mencoba OPEN_APPLICATION via spaCy dan Regex)
     if any(word in text_lower for word in ["selamat tinggal", "keluar program", "berhenti program"]):
+        print("DEBUG (process_nlu): Keyword cocok dengan GOODBYE_APP") # Tambahan log
         return {"intent": "GOODBYE_APP", "entities": {}}
     if "siapa namamu" in text_lower: 
+        print("DEBUG (process_nlu): Keyword cocok dengan GET_NAME") # Tambahan log
         return {"intent": "GET_NAME", "entities": {}}
     if any(word in text_lower for word in ["jam berapa", "pukul berapa"]):
+        print("DEBUG (process_nlu): Keyword cocok dengan GET_TIME") # Tambahan log
         return {"intent": "GET_TIME", "entities": {}}
-    
-    if NLP is None or MATCHER is None or not SPACY_MODEL_INITIALIZED: 
-         match_open_app_fallback = re.search(r"^(?:buka|jalankan)\s+(?:aplikasi\s+)?(.+)", text_lower)
-         if match_open_app_fallback:
-             app_name = match_open_app_fallback.group(1).strip()
-             if app_name: return {"intent": "OPEN_APPLICATION", "entities": {"app_name": app_name}}
-    
     if any(phrase in text_lower for phrase in ["apa judul jendela ini", "judul jendela aktif", "jendela apa yang aktif", "apa nama window ini", "sebutkan judul window"]):
+        print("DEBUG (process_nlu): Keyword cocok dengan GET_ACTIVE_WINDOW_TITLE") # Tambahan log
         return {"intent": "GET_ACTIVE_WINDOW_TITLE", "entities": {}}
 
+    # 4. Jika tidak ada yang cocok, baru fallback ke ASK_AI
+    print(f"DEBUG (process_nlu): Tidak ada intent spesifik yang cocok, jatuh ke ASK_AI untuk '{text_lower}'") # Tambahan log
     return {"intent": "ASK_AI", "entities": {"prompt": text}}
 
 def handle_open_application(entities):
