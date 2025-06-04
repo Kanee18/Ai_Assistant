@@ -17,6 +17,9 @@ import spacy
 import pyautogui
 import pygetwindow as gw 
 import api
+import winreg 
+import shutil 
+import string
 from spacy.matcher import Matcher 
 from tkinter import ttk, messagebox 
 
@@ -44,8 +47,6 @@ desktop_icon_thread = None
 desktop_icon_shutdown_event = threading.Event()
 DESKTOP_ICON_IMAGE_PATH = "siri_style_icon.png" 
 MACOS_LIKE_ICON_BG_COLOR = 'lime green' 
-
-DEFAULT_LOCATION_WEATHER = "Indonesia" 
 
 gemini_chat_session = None
 GEMINI_MODEL_INITIALIZED = False
@@ -772,27 +773,164 @@ def handle_type_text(entities):
              return "Maaf, saya mengalami masalah dengan fitur mengetik. Pastikan library yang dibutuhkan sudah terinstal."
         return "Maaf, terjadi kesalahan saat mencoba mengetik."
 
+def find_executable_path(app_name_from_nlu, target_exe_name=None):
+    """
+    Mencari path lengkap ke sebuah executable aplikasi di Windows secara lebih komprehensif.
+
+    Args:
+        app_name_from_nlu (str): Nama aplikasi yang diucapkan pengguna (misalnya "blender", "discord").
+        target_exe_name (str, optional): Nama file .exe yang spesifik jika diketahui (misalnya "blender.exe"). 
+                                         Jika None, akan dicoba dibuat dari app_name_from_nlu.
+
+    Returns:
+        str or None: Path lengkap ke executable jika ditemukan, atau None jika tidak.
+    """
+    print(f"INFO (find_executable_path): Memulai pencarian untuk aplikasi NLU: '{app_name_from_nlu}', target .exe: '{target_exe_name}'")
+
+    exe_to_search = target_exe_name
+    if not exe_to_search:
+        if app_name_from_nlu.lower().endswith(".exe"):
+            exe_to_search = app_name_from_nlu
+        else:
+            exe_to_search = app_name_from_nlu + ".exe"
+    
+    print(f"  Akan mencari file executable: '{exe_to_search}'")
+
+    app_paths_keys = [
+        r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths",
+        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths"
+    ]
+    registries_to_check = [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]
+    for hkey_type in registries_to_check:
+        for app_path_key in app_paths_keys:
+            try:
+                with winreg.OpenKey(hkey_type, os.path.join(app_path_key, exe_to_search)) as key:
+                    executable_path, _ = winreg.QueryValueEx(key, None)
+                    if os.path.exists(executable_path) and os.path.isfile(executable_path):
+                        print(f"  INFO: Ditemukan di Registry: {executable_path}")
+                        return executable_path
+            except FileNotFoundError:
+                continue
+            except Exception: 
+                continue
+    print(f"  INFO: Tidak ditemukan '{exe_to_search}' di Registry App Paths.")
+
+    print(f"  INFO: Mencari '{exe_to_search}' di variabel PATH (shutil.which)...")
+    path_from_which = shutil.which(exe_to_search)
+    if path_from_which and os.path.exists(path_from_which):
+        print(f"  INFO: Ditemukan via shutil.which (PATH): {path_from_which}")
+        return path_from_which
+    
+    if not app_name_from_nlu.lower().endswith(".exe") and app_name_from_nlu.lower() != exe_to_search.replace(".exe", "").lower():
+        print(f"  INFO: Mencari '{app_name_from_nlu}' (nama NLU asli) di PATH (shutil.which)...")
+        path_from_which_alias = shutil.which(app_name_from_nlu)
+        if path_from_which_alias and os.path.exists(path_from_which_alias):
+            print(f"  INFO: Ditemukan alias NLU via shutil.which (PATH): {path_from_which_alias}")
+            return path_from_which_alias
+    print(f"  INFO: Tidak ditemukan '{exe_to_search}' atau '{app_name_from_nlu}' di variabel PATH.")
+
+    common_install_folders = [
+        os.environ.get("ProgramFiles", "C:\\Program Files"),
+        os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"),
+        os.environ.get("LOCALAPPDATA"),
+    ]
+    if os.environ.get("LOCALAPPDATA"):
+        common_install_folders.append(os.path.join(os.environ.get("LOCALAPPDATA"), "Programs"))
+
+    for common_folder_root in common_install_folders:
+        if not common_folder_root or not os.path.isdir(common_folder_root):
+            continue
+        print(f"  INFO: Mencari '{exe_to_search}' di dalam dan sekitar '{common_folder_root}'...")
+        potential_path = os.path.join(common_folder_root, exe_to_search)
+        if os.path.exists(potential_path) and os.path.isfile(potential_path):
+            print(f"    DITEMUKAN: {potential_path}")
+            return potential_path
+        
+        path_in_app_named_folder = os.path.join(common_folder_root, app_name_from_nlu, exe_to_search)
+        if os.path.exists(path_in_app_named_folder) and os.path.isfile(path_in_app_named_folder):
+            print(f"    DITEMUKAN: {path_in_app_named_folder}")
+            return path_in_app_named_folder
+
+        for dirpath, dirnames, filenames in os.walk(common_folder_root):
+            current_depth = dirpath.replace(common_folder_root, '').count(os.sep)
+            if current_depth > 2: 
+                dirnames[:] = [] 
+                continue
+            if exe_to_search in filenames:
+                found_path = os.path.join(dirpath, exe_to_search)
+                if os.path.isfile(found_path): 
+                     print(f"    DITEMUKAN (os.walk di {common_folder_root}): {found_path}")
+                     return found_path
+    print(f"  INFO: Tidak ditemukan '{exe_to_search}' di lokasi instalasi umum standar.")
+
+    print(f"INFO: Memulai pencarian menyeluruh untuk '{exe_to_search}' di semua drive (ini bisa memakan waktu cukup lama)...")
+
+    available_drives = [f"{d}:\\" for d in string.ascii_uppercase if os.path.exists(f"{d}:")]
+    print(f"  Drive yang akan diperiksa: {available_drives}")
+
+    excluded_folders_keywords = [
+        "\\windows\\", "\\winnt\\", 
+        "\\$recycle.bin\\", "\\system volume information\\",
+        "\\recovery\\", "\\config.msi\\",
+        "\\drivers\\", "\\temp\\", "\\tmp\\",
+        "\\appdata\\roaming\\", 
+        "\\program files (x86)\\", "\\program files\\", "\\appdata\\local\\programs\\" 
+    ]
+    excluded_general_keywords = ["\\steam\\steamapps\\common\\", "\\python\\lib\\site-packages\\"]
+
+
+    for drive in available_drives:
+        print(f"  Mencari di drive: {drive}...")
+
+        for root_dir, dirnames, files in os.walk(drive, topdown=True):
+            dirnames[:] = [d for d in dirnames if not any(excluded_keyword in os.path.join(root_dir, d).lower() for excluded_keyword in excluded_folders_keywords + excluded_general_keywords)]
+            
+            if exe_to_search.lower() in (f.lower() for f in files): 
+                for f_actual_case in files:
+                    if f_actual_case.lower() == exe_to_search.lower():
+                        found_path = os.path.join(root_dir, f_actual_case)
+                        if os.path.isfile(found_path):
+                            print(f"  DITEMUKAN (pencarian menyeluruh di {drive}): {found_path}")
+                            return found_path
+        print(f"  Selesai mencari di drive: {drive}")
+
+    print(f"GAGAL AKHIR (find_executable_path): Path untuk '{app_name_from_nlu}' (target: {exe_to_search}) tidak dapat ditemukan setelah semua metode.")
+    return None
+
 def handle_open_application(entities):
-    app_name = entities.get("app_name")
-    if not app_name: return "Aplikasi apa? Katakan 'buka aplikasi [nama]'."
-    app_name_cleaned = app_name 
-    app_map = {"notepad": "notepad.exe", "kalkulator": "calc.exe", "paint": "mspaint.exe","google chrome": "chrome.exe", 
-               "chrome": "chrome.exe", "edge": "msedge.exe","word": "winword.exe", "excel": "excel.exe", "powerpoint": 
-               "powerpnt.exe", "cmd": "cmd.exe", "command prompt": "cmd.exe", "file explorer": "explorer.exe", "explorer": 
-               "explorer.exe", "spotify": "spotify.exe",}
-    command_to_run = app_map.get(app_name_cleaned.lower(), app_name_cleaned)
-    command_to_run_exe = None
-    if not command_to_run.lower().endswith(".exe") and command_to_run not in app_map.values() and " " not in command_to_run: command_to_run_exe = f"{command_to_run}.exe"
-    response_msg = f"Aplikasi {app_name} seharusnya sedang dibuka." 
-    try: print(f"Mencoba: {command_to_run}"); subprocess.Popen(command_to_run, shell=True)
-    except FileNotFoundError:
-        if command_to_run_exe and command_to_run_exe != command_to_run:
-            try: print(f"Gagal, mencoba: {command_to_run_exe}"); subprocess.Popen(command_to_run_exe, shell=True)
-            except FileNotFoundError: response_msg = f"Tidak ditemukan '{app_name}'/'{command_to_run_exe}'."
-            except Exception as e: response_msg = f"Error buka {app_name} (.exe): {e}"
-        else: response_msg = f"Tidak ditemukan '{app_name}'."
-    except Exception as e: response_msg = f"Error buka {app_name}: {e}"
-    return response_msg
+    app_name_from_nlu = entities.get("app_name")
+    if not app_name_from_nlu:
+        return "Aplikasi apa yang ingin Anda buka?"
+
+    print(f"INFO (handle_open_application): Menerima permintaan untuk membuka: '{app_name_from_nlu}'")
+
+    app_alias_map = {
+        "google chrome": "chrome", 
+        "chrome": "chrome",
+        "paint": "mspaint", 
+        "notepad": "notepad", 
+        "kalkulator": "calc",  
+        "spotify": "spotify",
+        "blender": "blender",
+        "discord": "discord",
+        "telegram": "telegram",
+    }
+    
+    name_to_search_base = app_alias_map.get(app_name_from_nlu.lower(), app_name_from_nlu)
+    
+    command_path = find_executable_path(name_to_search_base)
+    
+    if command_path:
+        try:
+            print(f"INFO (handle_open_application): Menjalankan aplikasi dari path: {command_path}")
+            subprocess.Popen(command_path) 
+            return f"Aplikasi {app_name_from_nlu} seharusnya sedang dibuka."
+        except Exception as e:
+            print(f"ERROR (handle_open_application): Gagal menjalankan Popen({command_path}): {e}")
+            return f"Error saat mencoba membuka {app_name_from_nlu}: {e}"
+    else:
+        print(f"GAGAL (handle_open_application): Path untuk aplikasi '{app_name_from_nlu}' tidak dapat ditemukan.")
+        return f"Maaf, saya tidak dapat menemukan aplikasi {app_name_from_nlu} di komputer Anda."
 
 def handle_close_application(entities):
     app_name_to_close = entities.get("app_name")
