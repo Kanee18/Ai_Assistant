@@ -49,7 +49,6 @@ DESKTOP_ICON_IMAGE_PATH = "siri_style_icon.png"
 MACOS_LIKE_ICON_BG_COLOR = 'lime green' 
 
 gemini_chat_session = None
-GEMINI_MODEL_INITIALIZED = False
 todo_list = [] 
 
 is_continuous_mode_active = False 
@@ -1588,7 +1587,10 @@ if __name__ == "__main__":
 
     if not TTS_ENGINE: print("PERINGATAN: Mesin TTS tidak aktif!") 
     if not pygame.mixer.get_init(): print("PERINGATAN: Pygame Mixer tidak aktif!") 
-    if not GEMINI_MODEL_INITIALIZED: print("PERINGATAN: Model Gemini tidak aktif!") 
+    if not api.GEMINI_MODEL_INITIALIZED: 
+        print("PERINGATAN (__main__): Model Gemini tidak aktif")
+    else:
+        print("INFO (__main__): Model Gemini AKTIF")
 
     print("INFO (__main__): Memanggil setup_pystray_icon_thread...")
     setup_pystray_icon_thread(main_tk_root) 

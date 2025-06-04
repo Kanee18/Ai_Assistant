@@ -1,6 +1,6 @@
 import google.generativeai as genai
 
-GEMINI_API_KEY = "AIzaSyDEF9aODiHNEqQHzHm3zOYLEIGRTomx68Q" 
+GEMINI_API_KEY = "AIzaSyA2KXCsk6Z92gCu8GLeoPrXHvCyT9pP9iw" 
 
 gemini_chat_session = None
 GEMINI_MODEL_INITIALIZED = False
