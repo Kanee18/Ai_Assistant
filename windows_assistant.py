@@ -20,6 +20,9 @@ import api
 import winreg 
 import shutil 
 import string
+import time
+import webbrowser
+import re
 from spacy.matcher import Matcher 
 from tkinter import ttk, messagebox 
 
@@ -670,13 +673,15 @@ def process_nlu(text):
     if SPACY_MODEL_INITIALIZED and NLP and MATCHER:
         doc = NLP(text_lower)
         matches = MATCHER(doc)
-        print(f"DEBUG (process_nlu): spaCy matches = {[(NLP.vocab.strings[match_id], doc[start:end].text) for match_id, start, end in matches]}")
+        matches_sorted = sorted(matches, key=lambda m: m[2] - m[1], reverse=True)
+        print(f"DEBUG (process_nlu): spaCy matches (sorted by length) = {[(NLP.vocab.strings[match_id], doc[start:end].text) for match_id, start, end in matches_sorted]}")
 
-        for match_id, start, end in matches:
+        for match_id, start, end in matches_sorted: 
             span = doc[start:end]  
             intent_name_spacy = NLP.vocab.strings[match_id]  
 
             if intent_name_spacy == "OPEN_APPLICATION_SPACY":
+                print("DEBUG (process_nlu): spaCy cocok dengan OPEN_APPLICATION_SPACY") 
                 app_name_tokens = []
                 if len(span) > 1 and span[1].lower_ == "aplikasi": 
                     app_name_tokens = span[2:] 
@@ -690,7 +695,6 @@ def process_nlu(text):
                 else: 
                     print("DEBUG (process_nlu): spaCy OPEN_APPLICATION_SPACY tapi tidak ada app_name.") 
                     return {"intent": "OPEN_APPLICATION_PROMPT", "entities": {}}
-
 
             elif intent_name_spacy == "CLOSE_APPLICATION_SPACY":
                 print("DEBUG (process_nlu): spaCy cocok dengan CLOSE_APPLICATION_SPACY")
@@ -710,35 +714,85 @@ def process_nlu(text):
             elif intent_name_spacy == "SEARCH_INFO_SPACY":
                 print("DEBUG (process_nlu): spaCy cocok dengan SEARCH_INFO_SPACY") 
                 topic_tokens = []
+                if span[0].lower_ in ["cari", "carikan", "jelaskan", "terangkan", "apa"]:
+                    start_index_for_topic = 1 
+                    for i, token in enumerate(span):
+                        if token.lower_ in ["tentang", "mengenai", "itu"]:
+                            start_index_for_topic = i + 1
+                            break 
+                    if start_index_for_topic < len(span):
+                        topic_tokens = span[start_index_for_topic:]
+                
                 topic = " ".join([token.text for token in topic_tokens]).strip()
                 if topic: 
                     print(f"DEBUG (process_nlu): spaCy menemukan topic: '{topic}'") 
                     return {"intent": "SEARCH_INFO", "entities": {"topic": topic}}
+                else:
+                    print(f"DEBUG (process_nlu): spaCy SEARCH_INFO_SPACY tapi tidak ada topic.")
         
-        print(f"DEBUG (process_nlu): Tidak ada pola spaCy Matcher yang dikenal yang menghasilkan return untuk: '{text_lower}'.")
+        print(f"DEBUG (process_nlu): Tidak ada pola spaCy Matcher yang dikenal yang menghasilkan return untuk: '{text_lower}'. Melanjutkan ke fallback regex/keyword.")
     else:
-        print(f"DEBUG (process_nlu): spaCy tidak diinisialisasi atau tidak aktif.")
+        print(f"DEBUG (process_nlu): spaCy tidak diinisialisasi atau tidak aktif. Menggunakan fallback regex/keyword.")
 
-    print(f"DEBUG (process_nlu): Mencoba fallback regex OPEN_APPLICATION untuk: '{text_lower}'")
-    match_open_app_fallback = re.search(r"^(?:buka|jalankan|aktifkan)\s+(?:aplikasi\s+)?(.+)", text_lower)
+    print(f"DEBUG (process_nlu): Mencoba regex CHAINED_OPEN_TYPE_NAVIGATE untuk: '{text_lower}'")
+    match_open_type_navigate = re.search(
+        r"^(?:buka|jalankan|aktifkan)\s+(?:aplikasi\s+)?(.+?)\s+dan\s+(?:ketik|tuliskan|tulis)\s+(.+?)\s+dan\s+(?:buka|cari|tuju|pergi ke)\s+(.+?)(?:nya)?$", 
+        text_lower
+    )
+    if match_open_type_navigate:
+        app_name = match_open_type_navigate.group(1).strip()
+        text_to_type = match_open_type_navigate.group(2).strip()
+        target_action_or_site = match_open_type_navigate.group(3).strip()
+        print(f"DEBUG (process_nlu): Regex CHAINED_OPEN_TYPE_NAVIGATE cocok. App: '{app_name}', Teks: '{text_to_type}', Target: '{target_action_or_site}'")
+        if app_name and text_to_type and target_action_or_site:
+            return {
+                "intent": "CHAINED_OPEN_TYPE_NAVIGATE",
+                "entities": {
+                    "app_name": app_name,
+                    "text_to_type": text_to_type,
+                    "target_action_or_site": target_action_or_site
+                }
+            }
+    else:
+        print(f"DEBUG (process_nlu): Regex CHAINED_OPEN_TYPE_NAVIGATE TIDAK cocok.")
+
+    print(f"DEBUG (process_nlu): Mencoba regex CHAINED_OPEN_TYPE untuk: '{text_lower}'")
+    match_open_then_type = re.search(r"^(?:buka|jalankan|aktifkan)\s+(?:aplikasi\s+)?(.+?)\s+dan\s+(?:ketik|tuliskan|tulis)\s+(.+)", text_lower)
+    if match_open_then_type:
+        app_name = match_open_then_type.group(1).strip()
+        text_to_type = match_open_then_type.group(2).strip()
+        print(f"DEBUG (process_nlu): Regex CHAINED_OPEN_TYPE cocok. App: '{app_name}', Teks: '{text_to_type}'")
+        if app_name and text_to_type:
+            return {
+                "intent": "CHAINED_OPEN_THEN_TYPE",
+                "entities": {
+                    "app_name": app_name,
+                    "text_to_type": text_to_type
+                }
+            }
+    else:
+        print(f"DEBUG (process_nlu): Regex CHAINED_OPEN_TYPE TIDAK cocok.")
+    print(f"DEBUG (process_nlu): Mencoba fallback regex OPEN_APPLICATION (umum) untuk: '{text_lower}'")
+    match_open_app_fallback = re.search(r"^(?:buka|jalankan|aktifkan)\s+(?:aplikasi\s+)?([a-zA-Z0-9\s]+?)(?:\s+dan\s+.*)?$", text_lower)
     if match_open_app_fallback:
         app_name = match_open_app_fallback.group(1).strip()
-        print(f"DEBUG (process_nlu): Fallback regex OPEN_APPLICATION cocok, app_name = '{app_name}'")
         if app_name: 
+            print(f"DEBUG (process_nlu): Fallback regex OPEN_APPLICATION (umum) cocok, app_name = '{app_name}'")
             return {"intent": "OPEN_APPLICATION", "entities": {"app_name": app_name}}
     else:
-        print(f"DEBUG (process_nlu): Fallback regex OPEN_APPLICATION TIDAK cocok.")
+        print(f"DEBUG (process_nlu): Fallback regex OPEN_APPLICATION (umum) TIDAK cocok.")
 
     print(f"DEBUG (process_nlu): Mencoba fallback regex CLOSE_APPLICATION untuk: '{text_lower}'")
-    match_close_app_fallback = re.search(r"^(?:tutup|close|hentikan)\s+(?:aplikasi\s+)?(.+)", text_lower)
+    match_close_app_fallback = re.search(r"^(?:tutup|close|hentikan)\s+(?:aplikasi\s+)?(.+)", text_lower) # Regex ini mungkin juga perlu disesuaikan agar tidak rakus
     if match_close_app_fallback:
         app_name = match_close_app_fallback.group(1).strip()
-        print(f"DEBUG (process_nlu): Fallback regex CLOSE_APPLICATION cocok, app_name = '{app_name}'")
-        if app_name: 
+        if app_name: # Pastikan app_name tidak kosong
+            print(f"DEBUG (process_nlu): Fallback regex CLOSE_APPLICATION cocok, app_name = '{app_name}'")
             return {"intent": "CLOSE_APPLICATION", "entities": {"app_name": app_name}}
     else:
         print(f"DEBUG (process_nlu): Fallback regex CLOSE_APPLICATION TIDAK cocok.") 
 
+    # Keyword spotting
     if any(word in text_lower for word in ["selamat tinggal", "keluar program", "berhenti program"]):
         print("DEBUG (process_nlu): Keyword cocok dengan GOODBYE_APP") 
         return {"intent": "GOODBYE_APP", "entities": {}}
@@ -752,9 +806,161 @@ def process_nlu(text):
         print("DEBUG (process_nlu): Keyword cocok dengan GET_ACTIVE_WINDOW_TITLE")  
         return {"intent": "GET_ACTIVE_WINDOW_TITLE", "entities": {}}
 
-
+    # 5. Fallback terakhir ke ASK_AI
     print(f"DEBUG (process_nlu): Tidak ada intent spesifik yang cocok, jatuh ke ASK_AI untuk '{text_lower}'") 
     return {"intent": "ASK_AI", "entities": {"prompt": text}}
+
+def handle_chained_open_then_type(entities):
+    app_name = entities.get("app_name")
+    text_to_type = entities.get("text_to_type")
+
+    if not app_name or not text_to_type:
+        return "Perintah tidak lengkap. Saya butuh nama aplikasi dan teks yang akan diketik."
+
+    # Langkah 1: Buka Aplikasi
+    response_open = handle_open_application({"app_name": app_name})
+    speak_with_pygame(response_open) 
+
+    if "gagal" in response_open.lower() or "tidak ditemukan" in response_open.lower() or "error" in response_open.lower():
+        return f"Gagal membuka {app_name}, jadi saya tidak bisa mengetik."
+
+    print(f"INFO (chained_open_then_type): Aplikasi '{app_name}' diasumsikan terbuka. Menunggu sebelum mengetik...")
+    time.sleep(5) 
+
+    try:
+        target_window_title_keyword = app_name
+        if app_name.lower() == "chrome": target_window_title_keyword = "chrome"
+        
+        print(f"INFO (chained_open_then_type): Mencoba mencari dan mengaktifkan jendela '{target_window_title_keyword}'...")
+        windows = gw.getWindowsWithTitle(target_window_title_keyword)
+        activated = False
+        if windows:
+            for win in sorted(windows, key=lambda w: w.title.lower().find(target_window_title_keyword.lower())):
+                if not win.isMinimized:
+                    try: 
+                        win.activate()
+                        print(f"  Jendela '{win.title}' diaktifkan.")
+                        time.sleep(0.5) 
+                        activated = True
+                        break
+                    except Exception as e_activate:
+                        print(f"  Gagal mengaktifkan jendela '{win.title}': {e_activate}")
+            if not activated and windows[0]: 
+                 try: 
+                    windows[0].activate()
+                    print(f"  Jendela (fallback) '{windows[0].title}' diaktifkan.")
+                    time.sleep(0.5)
+                    activated = True
+                 except Exception: pass 
+        
+        if not activated:
+            print(f"PERINGATAN (chained_open_then_type): Tidak bisa otomatis mengaktifkan jendela '{app_name}'. Pastikan jendela sudah aktif manual.")
+
+    except Exception as e_gw:
+        print(f"ERROR (chained_open_then_type): Kesalahan saat pygetwindow: {e_gw}")
+
+    response_type = handle_type_text({"text_to_type": text_to_type}) 
+
+    try:
+        print(f"INFO (chained_open_then_type): Menekan tombol 'enter' setelah mengetik '{text_to_type}'.")
+        pyautogui.press('enter')
+        return f"Selesai: {app_name} dibuka, '{text_to_type}' diketik, dan tombol enter ditekan."
+    except Exception as e_pyautogui_enter:
+        print(f"ERROR (chained_open_then_type): Gagal menekan tombol enter: {e_pyautogui_enter}")
+        return f"Selesai mengetik '{text_to_type}', tetapi gagal menekan tombol enter."
+
+def interpret_target_action(typed_text, target_action_or_site):
+    """
+    Mencoba menginterpretasikan apa yang harus dilakukan setelah mengetik.
+    Ini adalah logika sederhana, bisa dikembangkan.
+    """
+    typed_text_lower = typed_text.lower()
+    target_lower = target_action_or_site.lower()
+
+    if target_lower == "nya" or target_lower == typed_text_lower:
+        if "." in typed_text_lower and (" " not in typed_text_lower or any(domain in typed_text_lower for domain in [".com", ".co.id", ".org", ".net"])):
+            url_to_open = typed_text
+            if not url_to_open.startswith("http://") and not url_to_open.startswith("https://"):
+                url_to_open = "https://" + url_to_open
+            return {"action": "open_url", "url": url_to_open}
+        else:
+            return {"action": "press_enter"}
+    else:
+        if "." in target_lower and (" " not in target_lower or any(domain in target_lower for domain in [".com", ".co.id", ".org", ".net"])):
+            url_to_open = target_action_or_site
+            if not url_to_open.startswith("http://") and not url_to_open.startswith("https://"):
+                url_to_open = "https://" + url_to_open
+            return {"action": "open_url", "url": url_to_open}
+        else:
+            print(f"  Interpretasi target: '{target_action_or_site}' setelah mengetik '{typed_text}'. Mengasumsikan 'press_enter' pada '{typed_text}'.")
+            return {"action": "press_enter"}
+
+
+def handle_chained_open_type_navigate(entities):
+    app_name = entities.get("app_name")
+    text_to_type = entities.get("text_to_type")
+    target_action_or_site = entities.get("target_action_or_site")
+
+    if not app_name or not text_to_type or not target_action_or_site:
+        return "Perintah tidak lengkap. Saya butuh nama aplikasi, teks yang diketik, dan target aksi/situs."
+
+    response_open = handle_open_application({"app_name": app_name})
+    speak_with_pygame(response_open)
+
+    if "gagal" in response_open.lower() or "tidak ditemukan" in response_open.lower() or "error" in response_open.lower():
+        return f"Gagal membuka {app_name}, jadi saya tidak bisa melanjutkan."
+
+    print(f"INFO (chained_navigate): Aplikasi '{app_name}' diasumsikan sedang terbuka. Menunggu sebelum mengetik...")
+    time.sleep(5) 
+
+    try:
+        target_window_title_keyword = app_name
+        if app_name.lower() == "chrome": target_window_title_keyword = "chrome"
+        
+        print(f"INFO (chained_navigate): Mencoba mencari dan mengaktifkan jendela yang mengandung '{target_window_title_keyword}'...")
+        windows = gw.getWindowsWithTitle(target_window_title_keyword)
+        activated = False
+        if windows:
+            for win in sorted(windows, key=lambda w: w.title.lower().find(target_window_title_keyword.lower())):
+                if not win.isMinimized:
+                    try: win.activate(); print(f"  Jendela '{win.title}' diaktifkan."); time.sleep(0.5); activated = True; break
+                    except Exception as e_activate: print(f"  Gagal mengaktifkan jendela '{win.title}': {e_activate}")
+            if not activated and windows[0]:
+                 try: windows[0].activate(); print(f"  Jendela (fallback) '{windows[0].title}' diaktifkan."); time.sleep(0.5); activated = True
+                 except Exception: pass
+        if not activated:
+            print(f"PERINGATAN (chained_navigate): Tidak bisa otomatis mengaktifkan jendela '{app_name}'.")
+    except Exception as e_gw:
+        print(f"ERROR (chained_navigate): Kesalahan saat pygetwindow: {e_gw}")
+
+    response_type = handle_type_text({"text_to_type": text_to_type}) 
+
+    time.sleep(1) 
+
+    interpreted_action = interpret_target_action(text_to_type, target_action_or_site)
+    action_taken_message = ""
+
+    if interpreted_action["action"] == "press_enter":
+        print(f"INFO (chained_navigate): Menekan tombol 'enter'...")
+        pyautogui.press('enter')
+        action_taken_message = f"Tombol enter ditekan setelah mengetik {text_to_type}."
+    
+    elif interpreted_action["action"] == "open_url":
+        url = interpreted_action["url"]
+        print(f"INFO (chained_navigate): Mencoba membuka URL: {url} di browser default...")
+        try:
+            webbrowser.open(url, new=2) 
+            action_taken_message = f"Mencoba membuka {url}."
+        except Exception as e_wb:
+            print(f"ERROR (chained_navigate): Gagal membuka URL {url} dengan webbrowser: {e_wb}")
+            action_taken_message = f"Gagal membuka {url}."
+            if app_name.lower() in ["chrome", "edge", "firefox"]: 
+                 print(f"  Fallback: Menekan enter setelah mengetik '{text_to_type}' di {app_name}")
+                 pyautogui.press('enter')
+                 action_taken_message += " Mencoba menekan enter di browser."
+
+    return f"Selesai: Aplikasi {app_name} dibuka, '{text_to_type}' diketik, dan aksi '{interpreted_action['action']}' dilakukan. {action_taken_message}"
+
 
 def handle_type_text(entities):
     text_to_type = entities.get("text_to_type")
@@ -1146,6 +1352,9 @@ def continuous_conversation_loop():
                 
                 elif intent == "CLOSE_APPLICATION":
                     assistant_response = handle_close_application(entities)
+
+                elif intent == "CHAINED_OPEN_THEN_TYPE":
+                    assistant_response = handle_chained_open_then_type(entities)
                 
                 elif intent == "TYPE_TEXT":
                     assistant_response = handle_type_text(entities)
