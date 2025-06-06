@@ -1,5 +1,3 @@
-# main.py
-
 import os
 import re
 import subprocess
@@ -70,7 +68,7 @@ def speak_with_pygame(text_to_speak):
     
     def _save_and_play_in_thread(current_text):
         thread_name = threading.current_thread().name; acquired_lock_for_flag_init = False; sound_played_successfully = False
-        temp_audio_file = f"temp_tts_{thread_name}.wav" # Gunakan nama file unik per thread
+        temp_audio_file = f"temp_tts_{thread_name}.wav" 
         try:
             if not config.tts_lock.acquire(timeout=1.0): print(f"TTS Thread {thread_name}: Gagal lock awal, batal."); return 
             acquired_lock_for_flag_init = True; config.is_assistant_speaking = True; config.tts_lock.release(); acquired_lock_for_flag_init = False 
@@ -100,7 +98,6 @@ def speak_with_pygame(text_to_speak):
             
         except Exception as e: print(f"Error simpan/putar (thread {thread_name}): {e}")
         finally:
-            # Beri sedikit waktu agar file handle dilepaskan
             time.sleep(0.1)
             if os.path.exists(temp_audio_file):
                 try:
@@ -365,7 +362,6 @@ def handle_chained_open_then_type(entities):
     if not app_name or not text_to_type:
         return "Perintah tidak lengkap. Saya butuh nama aplikasi dan teks yang akan diketik."
 
-    # Langkah 1: Buka Aplikasi
     response_open = handle_open_application({"app_name": app_name})
     speak_with_pygame(response_open) 
 
@@ -565,7 +561,7 @@ def handle_type_in_new_tab(entities):
     target_app_name = None
 
     if app_from_nlu and app_from_nlu.lower() in supported_browsers:
-        target_app_name = app_from_nlu.lower() # <-- Ini akan diisi dengan "edge"
+        target_app_name = app_from_nlu.lower() 
         print(f"INFO (handle_type_in_new_tab): Target browser dari NLU: '{target_app_name}'")
     else:
         print(f"INFO (handle_type_in_new_tab): Browser tidak disebut NLU, mencoba deteksi otomatis...")
@@ -640,12 +636,10 @@ def handle_type_in_new_tab(entities):
         pyautogui.hotkey('ctrl', 't')
         time.sleep(1)
 
-        # 3. Ketik Teks
         print(f"  Mengetik '{text_to_type}'...")
         pyautogui.write(text_to_type, interval=0.05)
         time.sleep(0.5)
 
-        # 4. Tekan Enter
         print("  Menekan tombol 'Enter'...")
         pyautogui.press('enter')
 
@@ -981,7 +975,7 @@ def continuous_conversation_loop():
                         assistant_response = "Topik apa yang ingin Anda cari informasinya?"
 
                 elif intent == "ASK_AI":
-                    if not api.GEMINI_MODEL_INITIALIZED: # Cek variabel dari modul api
+                    if not api.GEMINI_MODEL_INITIALIZED: 
                         assistant_response = "Fitur AI belum aktif."
                     else:
                         assistant_response = api.send_to_gemini(entities["prompt"])
@@ -1137,8 +1131,6 @@ def new_quit_action():
         print("Menghentikan ikon tray...")
         config.tray_icon_object.stop()
     
-    # BAGIAN YANG DIHAPUS:
-    # Kita tidak perlu lagi memanggil .join() pada tray_icon_thread dari dalam thread itu sendiri.
     # if config.tray_icon_thread and config.tray_icon_thread.is_alive():
     #     print("Menunggu thread pystray selesai...")
     #     config.tray_icon_thread.join(timeout=1.0)
@@ -1151,7 +1143,6 @@ def new_quit_action():
 
     if config.main_tk_root:
         print("Menjadwalkan penutupan aplikasi Tkinter utama...")
-        # Menggunakan .destroy() lebih aman dari dalam callback seperti ini
         config.main_tk_root.destroy() 
     
     print("Proses keluar hampir selesai.")
