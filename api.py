@@ -5,7 +5,6 @@ GEMINI_MODEL_INITIALIZED = False
 gemini_chat_session = None
 
 def initialize_gemini():
-    """Menginisialisasi model dan sesi chat Gemini."""
     global gemini_chat_session, GEMINI_MODEL_INITIALIZED
     
     api_key = config.GEMINI_API_KEY
@@ -34,7 +33,6 @@ def initialize_gemini():
         GEMINI_MODEL_INITIALIZED = False
 
 def send_to_gemini(user_prompt):
-    """Mengirim prompt ke Gemini dan mengembalikan respons teks."""
     global gemini_chat_session
     
     if not GEMINI_MODEL_INITIALIZED or not gemini_chat_session:

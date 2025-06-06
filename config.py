@@ -1,5 +1,9 @@
 import threading
 import tkinter as tk
+import os  
+from dotenv import load_dotenv  
+
+load_dotenv()
 
 # Engine and Recognizer
 TTS_ENGINE = None
@@ -36,11 +40,16 @@ MACOS_LIKE_ICON_BG_COLOR = 'lime green'
 # Gemini and To-Do
 gemini_chat_session = None
 todo_list = []
-GEMINI_API_KEY = "AIzaSyA2KXCsk6Z92gCu8GLeoPrXHvCyT9pP9iw"  # <-- Tambahkan API Key Anda di sini
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Spotify API Credentials
+SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID") 
+SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET") 
+SPOTIPY_REDIRECT_URI = "http://127.0.0.1:8888/callback" 
 
 # TTS Threading
 tts_thread = None
-tts_lock = threading.Lock()
+tts_lock = threading.Lock() 
 
 # Audio
 AUDIO_FILENAME = "temp_tts_output.wav"

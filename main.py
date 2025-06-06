@@ -1,3 +1,5 @@
+# main.py
+
 import os
 import re
 import subprocess
@@ -20,6 +22,9 @@ import api
 import config
 import gui
 import utils
+
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
 
 def set_default_indonesian_voice():
     if not config.TTS_ENGINE: return
@@ -65,54 +70,44 @@ def speak_with_pygame(text_to_speak):
     
     def _save_and_play_in_thread(current_text):
         thread_name = threading.current_thread().name; acquired_lock_for_flag_init = False; sound_played_successfully = False
+        temp_audio_file = f"temp_tts_{thread_name}.wav" # Gunakan nama file unik per thread
         try:
             if not config.tts_lock.acquire(timeout=1.0): print(f"TTS Thread {thread_name}: Gagal lock awal, batal."); return 
             acquired_lock_for_flag_init = True; config.is_assistant_speaking = True; config.tts_lock.release(); acquired_lock_for_flag_init = False 
             
             print(f"Asisten (simpan file - thread {thread_name}): {current_text}")
-            config.TTS_ENGINE.save_to_file(current_text, config.AUDIO_FILENAME); config.TTS_ENGINE.runAndWait(); print(f"Audio disimpan: {config.AUDIO_FILENAME}")
+            config.TTS_ENGINE.save_to_file(current_text, temp_audio_file); config.TTS_ENGINE.runAndWait(); print(f"Audio disimpan: {temp_audio_file}")
             
             with config.tts_lock: 
                 if not config.is_assistant_speaking: print(f"TTS Thread {thread_name}: Interupsi saat simpan."); return 
             
             if not pygame.mixer.get_init(): print(f"TTS Thread {thread_name}: Pygame mixer mati saat akan putar."); return
 
-            pygame.mixer.music.load(config.AUDIO_FILENAME); pygame.mixer.music.play(); sound_played_successfully = True
+            sound = pygame.mixer.Sound(temp_audio_file)
+            sound.play()
+            sound_played_successfully = True
             
-            while pygame.mixer.music.get_busy():
+            while pygame.mixer.get_busy():
                 time.sleep(0.05)
                 with config.tts_lock: 
                     if not config.is_assistant_speaking: 
                         print(f"Thread TTS {thread_name}: Sinyal interupsi diterima saat audio diputar.")
-                        pygame.mixer.music.stop()
-                        
-                        if hasattr(pygame.mixer.music, 'unload'):
-                            try:
-                                print(f"Thread TTS {thread_name}: Mencoba unload musik setelah interupsi...")
-                                pygame.mixer.music.unload()
-                                print(f"Thread TTS {thread_name}: File musik di-unload dari mixer (setelah interupsi).")
-                            except pygame.error as e_unload_int: 
-                                print(f"Thread TTS {thread_name}: Pygame error saat unload (setelah interupsi): {e_unload_int}")
-                            except Exception as e_unload_general_int: 
-                                print(f"Thread TTS {thread_name}: Error umum saat unload (setelah interupsi): {e_unload_general_int}")
+                        sound.stop()
                         break 
             
-            if sound_played_successfully and not pygame.mixer.music.get_busy() and config.is_assistant_speaking: print(f"TTS Thread {thread_name}: Audio selesai normal.")
-            elif pygame.mixer.music.get_busy(): pygame.mixer.music.stop(); print(f"TTS Thread {thread_name}: Musik stop paksa di akhir.")
+            if sound_played_successfully and not pygame.mixer.get_busy() and config.is_assistant_speaking: print(f"TTS Thread {thread_name}: Audio selesai normal.")
+            elif pygame.mixer.get_busy(): sound.stop(); print(f"TTS Thread {thread_name}: Musik stop paksa di akhir.")
             
-            if sound_played_successfully and hasattr(pygame.mixer.music, 'unload'):
-                try: time.sleep(0.05); pygame.mixer.music.unload(); print(f"Thread TTS {thread_name}: File {config.AUDIO_FILENAME} di-unload.")
-                except pygame.error as e: print(f"TTS Thread {thread_name}: Pygame error unload '{config.AUDIO_FILENAME}': {e}")
         except Exception as e: print(f"Error simpan/putar (thread {thread_name}): {e}")
         finally:
-            if os.path.exists(config.AUDIO_FILENAME):
-                print(f"Hapus file: {config.AUDIO_FILENAME}"); time.sleep(0.2) 
-                for i in range(5): 
-                    try: os.remove(config.AUDIO_FILENAME); print(f"File {config.AUDIO_FILENAME} hapus percobaan {i+1} sukses."); break 
-                    except PermissionError as e_perm:
-                        if i == 4: print(f"Gagal total hapus {config.AUDIO_FILENAME} (PermissionError): {e_perm}")
-                        else: print(f"Gagal hapus percobaan ke-{i+1} (PermissionError), coba lagi..."); time.sleep(0.3 + (i*0.1)) 
-                    except Exception as e_del: print(f"Gagal hapus percobaan ke-{i+1} (Error Lain): {e_del}"); break 
+            # Beri sedikit waktu agar file handle dilepaskan
+            time.sleep(0.1)
+            if os.path.exists(temp_audio_file):
+                try:
+                    os.remove(temp_audio_file)
+                    print(f"File {temp_audio_file} berhasil dihapus.")
+                except Exception as e_del:
+                    print(f"Gagal menghapus file {temp_audio_file}: {e_del}")
             
             if acquired_lock_for_flag_init and config.tts_lock.locked(): 
                  config.tts_lock.release() 
@@ -126,7 +121,7 @@ def speak_with_pygame(text_to_speak):
     try:
         if config.tts_thread and config.tts_thread.is_alive():
             print("Speak_pygame: Thread TTS lama aktif, stop musiknya...");
-            if pygame.mixer.get_init() and pygame.mixer.music.get_busy(): pygame.mixer.music.stop()
+            pygame.mixer.stop()
             config.is_assistant_speaking = False; config.tts_thread.join(timeout=0.3) 
             if config.tts_thread.is_alive(): print("Speak_pygame: Peringatan, thread TTS lama masih hidup.")
         
@@ -201,7 +196,7 @@ def process_nlu(text):
                 else:
                     print(f"DEBUG (process_nlu): spaCy SEARCH_INFO_SPACY tapi tidak ada topic.")
         
-        print(f"DEBUG (process_nlu): Tidak ada pola spaCy Matcher yang dikenal yang menghasilkan return untuk: '{text_lower}'. Melanjutkan ke fallback regex/keyword.")
+        print(f"DEBUG (process_nlu): Tidak ada pola spaCy Matcher yang dikenal. Melanjutkan ke fallback regex/keyword.")
     else:
         print(f"DEBUG (process_nlu): spaCy tidak diinisialisasi atau tidak aktif. Menggunakan fallback regex/keyword.")
 
@@ -243,6 +238,7 @@ def process_nlu(text):
             }
     else:
         print(f"DEBUG (process_nlu): Regex CHAINED_OPEN_TYPE TIDAK cocok.")
+        
     print(f"DEBUG (process_nlu): Mencoba fallback regex OPEN_APPLICATION (umum) untuk: '{text_lower}'")
     match_open_app_fallback = re.search(r"^(?:buka|jalankan|aktifkan)\s+(?:aplikasi\s+)?([a-zA-Z0-9\s]+?)(?:\s+dan\s+.*)?$", text_lower)
     if match_open_app_fallback:
@@ -254,16 +250,27 @@ def process_nlu(text):
         print(f"DEBUG (process_nlu): Fallback regex OPEN_APPLICATION (umum) TIDAK cocok.")
 
     print(f"DEBUG (process_nlu): Mencoba fallback regex CLOSE_APPLICATION untuk: '{text_lower}'")
-    match_close_app_fallback = re.search(r"^(?:tutup|close|hentikan)\s+(?:aplikasi\s+)?(.+)", text_lower) # Regex ini mungkin juga perlu disesuaikan agar tidak rakus
+    match_close_app_fallback = re.search(r"^(?:tutup|close|hentikan)\s+(?:aplikasi\s+)?(.+)", text_lower)
     if match_close_app_fallback:
         app_name = match_close_app_fallback.group(1).strip()
-        if app_name: # Pastikan app_name tidak kosong
+        if app_name:
             print(f"DEBUG (process_nlu): Fallback regex CLOSE_APPLICATION cocok, app_name = '{app_name}'")
             return {"intent": "CLOSE_APPLICATION", "entities": {"app_name": app_name}}
     else:
         print(f"DEBUG (process_nlu): Fallback regex CLOSE_APPLICATION TIDAK cocok.") 
 
-    # Keyword spotting
+    print(f"DEBUG (process_nlu): Mencoba regex PLAY_SONG_ON_SPOTIFY untuk: '{text_lower}'")
+    match_play_song = re.search(r"^(?:putar|mainkan)\s+(?:lagu\s+)?(.+?)\s+di\s+spotify$", text_lower)
+    if match_play_song:
+        song_title = match_play_song.group(1).strip()
+        print(f"DEBUG (process_nlu): Regex PLAY_SONG_ON_SPOTIFY cocok. Judul Lagu: '{song_title}'")
+        return {
+            "intent": "PLAY_SONG_ON_SPOTIFY",
+            "entities": {"song_title": song_title}
+        }
+    else:
+        print(f"DEBUG (process_nlu): Regex PLAY_SONG_ON_SPOTIFY TIDAK cocok.")
+
     if any(word in text_lower for word in ["selamat tinggal", "keluar program", "berhenti program"]):
         print("DEBUG (process_nlu): Keyword cocok dengan GOODBYE_APP") 
         return {"intent": "GOODBYE_APP", "entities": {}}
@@ -277,7 +284,7 @@ def process_nlu(text):
         print("DEBUG (process_nlu): Keyword cocok dengan GET_ACTIVE_WINDOW_TITLE")  
         return {"intent": "GET_ACTIVE_WINDOW_TITLE", "entities": {}}
     
-    print(f"DEBUG (process_nlu): Mencoba regex TYPE_IN_NEW_TAB_BROWSER untuk: '{text_lower}'")
+    print(f"DEBUG (process_nlo): Mencoba regex TYPE_IN_NEW_TAB_BROWSER untuk: '{text_lower}'")
     match_type_new_tab = re.search(
         r"^(?:ketik|tuliskan|tulis|carikan)\s+(.+?)\s+di\s+(?:tab\s+baru|new\s+tab)(?:\s+(?:di\s+)?(chrome|edge|firefox))?$",
         text_lower
@@ -285,12 +292,9 @@ def process_nlu(text):
     if match_type_new_tab:
         text_to_type = match_type_new_tab.group(1).strip()
         browser_name_from_regex = match_type_new_tab.group(2) 
-        
-        
         entities_dict = {"text_to_type": text_to_type}
         if browser_name_from_regex:
             entities_dict["target_app"] = browser_name_from_regex.strip().lower()
-        
         return {
             "intent": "TYPE_IN_NEW_TAB_BROWSER",
             "entities": entities_dict
@@ -300,6 +304,59 @@ def process_nlu(text):
 
     print(f"DEBUG (process_nlu): Tidak ada intent spesifik yang cocok, jatuh ke ASK_AI untuk '{text_lower}'") 
     return {"intent": "ASK_AI", "entities": {"prompt": text}}
+
+def handle_play_song_on_spotify(entities):
+    song_title = entities.get("song_title")
+    if not song_title:
+        return "Lagu apa yang ingin Anda putar di Spotify?"
+
+    speak_with_pygame(f"Baik, saya siapkan lagu {song_title} di Spotify.")
+    print("\n--- MEMULAI PROSES SPOTIFY (Logika Taskkill yang Kuat) ---")
+
+    try:
+        scope = "user-modify-playback-state"
+        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+            client_id=config.SPOTIPY_CLIENT_ID,
+            client_secret=config.SPOTIPY_CLIENT_SECRET,
+            redirect_uri=config.SPOTIPY_REDIRECT_URI,
+            scope=scope
+        ))
+
+        print(f"[DEBUG] Mencari lagu dengan judul: '{song_title}'")
+        results = sp.search(q=f"track:{song_title}", type='track', limit=1)
+
+        if not (results and results['tracks']['items']):
+            return f"Maaf, saya tidak dapat menemukan lagu berjudul {song_title} di Spotify."
+
+        track = results['tracks']['items'][0]
+        track_name = track['name']
+        track_uri = track['uri']
+        print(f"[DEBUG] Lagu ditemukan: '{track_name}' dengan URI: {track_uri}")
+        
+        print("[DEBUG] Mencoba menghentikan paksa proses spotify.exe yang mungkin sedang berjalan...")
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "spotify.exe"], 
+                           check=True, capture_output=True, text=True)
+            print("[DEBUG] Proses Spotify berhasil dihentikan. Menunggu sejenak...")
+            time.sleep(1) 
+        except subprocess.CalledProcessError as e:
+            if "process not found" in e.stderr.lower():
+                print("[DEBUG] Proses Spotify tidak ditemukan (memang belum berjalan). Melanjutkan...")
+            else:
+                print(f"[PERINGATAN] Error saat menjalankan taskkill: {e.stderr}")
+
+        print(f"[DEBUG] Membuka URI lagu '{track_name}' via browser untuk memulai sesi baru...")
+        webbrowser.open(track_uri)
+        
+        return f"Oke, saya buka ulang Spotify dengan lagu {track_name} untuk Anda."
+
+    except spotipy.exceptions.SpotifyOauthError:
+        return "Gagal otentikasi dengan Spotify. Pastikan kredensial Anda benar dan Anda sudah login di browser."
+    except Exception as e:
+        print(f"--- ERROR KRITIS DI SPOTIFY HANDLER ---")
+        import traceback
+        traceback.print_exc()
+        return "Aduh, terjadi error yang tidak terduga saat menghubungkan ke Spotify."
 
 def handle_chained_open_then_type(entities):
     app_name = entities.get("app_name")
@@ -911,6 +968,9 @@ def continuous_conversation_loop():
                 elif intent == "GET_ACTIVE_WINDOW_TITLE":
                     assistant_response = handle_get_active_window_title()
 
+                elif intent == "PLAY_SONG_ON_SPOTIFY":
+                    assistant_response = handle_play_song_on_spotify(entities)
+
                 elif intent == "SEARCH_INFO": 
                     topic = entities.get("topic")
                     if topic:
@@ -1076,9 +1136,12 @@ def new_quit_action():
     if config.tray_icon_object:
         print("Menghentikan ikon tray...")
         config.tray_icon_object.stop()
-    if config.tray_icon_thread and config.tray_icon_thread.is_alive():
-        print("Menunggu thread pystray selesai...")
-        config.tray_icon_thread.join(timeout=1.0)
+    
+    # BAGIAN YANG DIHAPUS:
+    # Kita tidak perlu lagi memanggil .join() pada tray_icon_thread dari dalam thread itu sendiri.
+    # if config.tray_icon_thread and config.tray_icon_thread.is_alive():
+    #     print("Menunggu thread pystray selesai...")
+    #     config.tray_icon_thread.join(timeout=1.0)
 
     if pygame.mixer.get_init():
         pygame.mixer.quit()
@@ -1088,6 +1151,7 @@ def new_quit_action():
 
     if config.main_tk_root:
         print("Menjadwalkan penutupan aplikasi Tkinter utama...")
+        # Menggunakan .destroy() lebih aman dari dalam callback seperti ini
         config.main_tk_root.destroy() 
     
     print("Proses keluar hampir selesai.")
