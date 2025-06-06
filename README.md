@@ -1,117 +1,109 @@
 # Windows Voice Assistant "Kanee"
 
-"Kanee" is a Python-based virtual assistant designed to enhance productivity on the Windows operating system. It leverages voice commands to perform a variety of tasks, including application control, information retrieval via generative AI, and media playback control.
+"Kanee" is a Python-based virtual assistant designed to enhance productivity on the Windows operating system. It leverages voice commands to perform various tasks, such as opening applications, searching for information, interacting with a generative AI, and controlling media playback.
 
 ## Key Features
 
-* **Voice-Activated Commands**: Listens to and processes voice commands in Indonesian.
-* **Text-to-Speech (TTS) Feedback**: Provides clear, spoken responses.
-* **Application Control**: Opens and closes applications installed on Windows (e.g., Notepad, Chrome, Calculator).
-* **Spotify Integration**:
-    * Finds and plays songs on Spotify using voice commands.
-    * Intelligently handles both **Premium** and **Free** accounts. For Free users, it opens the song directly in the desktop app.
-    * Can switch songs by restarting the Spotify client with the new track.
-* **Generative AI Chat**: Integrates with the Google Gemini API to answer complex questions and hold conversations.
-* **System Interaction**: Can identify and report the title of the currently active window.
-* **Configurable Settings**: A graphical user interface (GUI) to easily select the TTS voice and input microphone.
-* **System Tray Operation**: Runs conveniently in the system tray, providing easy access to start/stop the assistant, open settings, or exit the application.
-* **Visual Desktop Icon**: An optional on-screen icon provides visual feedback when the assistant is active.
+* **Voice Recognition**: Listens to and understands user voice commands in Indonesian.
+* **Text-to-Speech (TTS)**: Provides clear voice responses to the user.
+* **Application Control**: Opens and closes applications installed on Windows (e.g., Notepad, Calculator, Chrome).
+* **Spotify Integration**: Finds and plays songs on Spotify using voice commands. It intelligently handles both **Premium** and **Free** accounts; for Free users, it opens the song directly in the desktop app, even restarting it if necessary to change tracks.
+* **Information Retrieval**: Uses generative AI (Google Gemini) to answer questions and find information.
+* **Continuous Interaction**: A conversation mode where the user can issue multiple commands without reactivating the listening mode each time.
+* **Settings GUI**: A graphical user interface to configure TTS voice preferences and input microphone.
+* **System Tray Integration**: Runs in the background and can be accessed via an icon in the Windows system tray for easy control.
+* **Interactive Desktop Icon**: Displays an icon on the desktop that provides visual feedback when the assistant is active.
 
 ## Technologies Used
 
-* **Python 3**: The core programming language.
-* **SpeechRecognition**: For converting user speech to text.
-* **pyttsx3**: For text-to-speech synthesis.
-* **Pygame**: Used for audio playback to prevent blocking.
-* **Tkinter**: For the settings and desktop icon GUI.
-* **pystray** & **Pillow (PIL)**: For system tray icon creation and management.
+* **Python 3**: Main programming language.
+* **pystray** & **Pillow**: For creating the system tray icon and menu.
+* **SpeechRecognition**: For converting audio to text.
+* **pyttsx3**: For converting text to speech (TTS).
+* **Pygame**: Used for playing TTS audio without blocking the main thread.
+* **Tkinter**: For creating the graphical user interface (GUI).
 * **spotipy**: A Python client for the Spotify Web API.
 * **google-generativeai**: The official Python SDK for the Google Gemini API.
 * **pygetwindow**: For window management and interaction.
 * **python-dotenv**: For securely managing environment variables and API keys.
-* Standard libraries: `os`, `re`, `subprocess`, `json`, `threading`, `time`.
+* Standard Python libraries like `os`, `json`, `threading`, `subprocess`, `time`, and `re`.
 
-## Installation Guide
+## Installation
 
-Follow these steps to set up and run the assistant on your local machine.
+1.  **Clone the Repository:**
+    ```bash
+    git clone [https://github.com/YOUR_USERNAME/YOUR_REPOSITORY_NAME.git](https://github.com/YOUR_USERNAME/YOUR_REPOSITORY_NAME.git)
+    cd YOUR_REPOSITORY_NAME
+    ```
 
-#### 1. Clone the Repository
+2.  **Create and Activate a Virtual Environment (Recommended):**
+    ```bash
+    python -m venv venv
+    # For Windows
+    .\venv\Scripts\activate
+    ```
 
-First, clone this repository to your local machine.
-```bash
-git clone [https://github.com/YOUR_USERNAME/YOUR_REPOSITORY_NAME.git](https://github.com/YOUR_USERNAME/YOUR_REPOSITORY_NAME.git)
-cd YOUR_REPOSITORY_NAME
-2. Create and Activate a Virtual Environment
-It is highly recommended to use a virtual environment to manage project dependencies.
+3.  **Install Dependencies:**
+    Install all required libraries using the `requirements.txt` file.
+    ```bash
+    pip install -r requirements.txt
+    ```
+    *A minimal `requirements.txt` for this project:*
+    ```
+    pystray
+    Pillow
+    SpeechRecognition
+    pyttsx3
+    pygame
+    google-generativeai
+    spotipy
+    pygetwindow
+    python-dotenv
+    ```
 
-Bash
+4.  **Configure API Keys:**
+    This project uses a `.env` file for secure API key management.
+    * Create a copy of the `.env.example` file and rename it to `.env`.
+    * Open the `.env` file and enter your personal API keys.
+        ```
+        # .env file
+        GEMINI_API_KEY="YOUR_VALID_GEMINI_API_KEY_HERE"
+        SPOTIPY_CLIENT_ID="YOUR_SPOTIFY_CLIENT_ID_HERE"
+        SPOTIPY_CLIENT_SECRET="YOUR_SPOTIFY_CLIENT_SECRET_HERE"
+        ```
+    * **Important**: The `.gitignore` file ensures that your `.env` file with your secret keys will **not** be uploaded to GitHub.
 
-# Create the virtual environment
-python -m venv venv
+## How to Run
 
-# Activate it on Windows
-.\venv\Scripts\activate
-3. Install Dependencies
-Install all the required Python libraries using the requirements.txt file.
+After all dependencies are installed and configurations are set:
 
-Bash
+1.  Ensure you are in the project's root directory and your virtual environment is activated.
+2.  Run the main Python script:
+    ```bash
+    python main.py
+    ```
+3.  The assistant's icon will appear in your Windows system tray. Right-click the icon to see available options like "Start Conversation," "Sound Settings," and "Exit."
 
-pip install -r requirements.txt
-A minimal requirements.txt file for this project would look like this:
+## Usage
 
-SpeechRecognition
-pyttsx3
-pygame
-pystray
-Pillow
-spotipy
-google-generativeai
-pygetwindow
-python-dotenv
-4. API Key and Configuration Setup
-This project requires API keys to function. We use a .env file to handle them securely.
+* **Start/Stop Conversation**: Use the system tray menu to activate or deactivate the continuous listening mode.
+* **Voice Commands (Examples):**
+    * `"Buka Notepad"`
+    * `"Jam berapa sekarang?"`
+    * `"Putar lagu Hati-Hati di Jalan di Spotify"`
+    * `"Jelaskan tentang sejarah Buleleng"`
 
-In the project directory, find the example file named .env.example.
+## Future Development Plans
 
-Create a copy of this file and rename it to .env.
+* Implement a wake word (e.g., "Hey Kanee") to initiate interaction without clicks.
+* Add To-Do List and reminder management features.
+* Integrate a weather information service.
+* Enhance the desktop icon with speaking animations.
 
-Open and edit the .env file with your personal keys:
+## Contributing
 
-# .env file
+If you'd like to contribute to this project, please fork the repository and create a pull request. Suggestions and feedback are also highly welcome via the "Issues" section on GitHub.
 
-# Get your Gemini API Key from Google AI Studio
-GEMINI_API_KEY="YOUR_GEMINI_API_KEY_HERE"
+## License
 
-# Get your Spotify credentials from the Spotify Developer Dashboard
-SPOTIPY_CLIENT_ID="YOUR_SPOTIFY_CLIENT_ID_HERE"
-SPOTIPY_CLIENT_SECRET="YOUR_SPOTIFY_CLIENT_SECRET_HERE"
-The .gitignore file is already configured to ignore the .env file, so your keys will not be uploaded to GitHub.
-
-How to Run
-Once the setup is complete, you can run the assistant.
-
-Make sure you are in the project's root directory.
-Ensure your virtual environment is activated.
-Run the main script:
-Bash
-
-python main.py
-The assistant's icon will appear in your Windows system tray. Right-click the icon for options.
-Usage Examples
-After activating the conversation mode from the system tray menu, you can use commands like:
-
-General Commands:
-"Buka Notepad"
-"Tutup Kalkulator"
-"Jam berapa sekarang?"
-Spotify Commands:
-"Putar lagu Lampu Merah di Spotify"
-"Mainkan lagu Hati-Hati di Jalan di Spotify"
-AI Interaction:
-"Jelaskan tentang relativitas umum"
-"Beri aku ide untuk makan malam"
-Contributing
-Contributions are welcome! If you have ideas for new features or improvements, please feel free to fork the repository and submit a pull request. You can also open an issue to report bugs or suggest enhancements.
-
-License
-This project is licensed under the MIT License. See the LICENSE file for more details.
+This project is licensed under the MIT License - see the `LICENSE.md` file for details.
